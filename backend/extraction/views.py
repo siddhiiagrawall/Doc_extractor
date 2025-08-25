@@ -1,3 +1,70 @@
+from rest_framework.decorators import api_view, permission_classes, parser_classes
+from rest_framework.permissions import IsAuthenticated, AllowAny
+from rest_framework import status
+from rest_framework.response import Response
+from rest_framework.parsers import MultiPartParser, FormParser
+from django.contrib.auth.models import User
+from django.db import IntegrityError
+from django.core.files.storage import default_storage
+from django.core.files.base import ContentFile
+import os
+import time
+import logging
+
+from .models import Document, ExtractionResult
+from .serializers import DocumentUploadSerializer, ExtractionResultSerializer
+from .ai_processor import processor
+
+logger = logging.getLogger(__name__)
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def ask_question(request, document_id):
+    """
+    Answer a user question about a specific document using the QA pipeline
+    """
+    try:
+        document = Document.objects.get(id=document_id, user=request.user)
+        question = request.data.get('question')
+        if not question:
+            return Response({'success': False, 'message': 'Question is required.'}, status=status.HTTP_400_BAD_REQUEST)
+        # Extract text from the document
+        pdf_path = document.file.path
+        text = processor.extract_text_from_pdf(pdf_path)
+        # Use QA pipeline
+        result = processor.answer_question(text, question)
+        return Response({'success': True, 'result': result}, status=status.HTTP_200_OK)
+    except Document.DoesNotExist:
+        return Response({'success': False, 'message': 'Document not found.'}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Error in ask_question: {e}")
+        return Response({'success': False, 'message': 'Error answering question.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+from django.contrib.auth.models import User
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import AllowAny
+from rest_framework import status
+from rest_framework.response import Response
+from django.db import IntegrityError
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def register(request):
+    """
+    Register a new user with email and password
+    """
+    email = request.data.get('email')
+    password = request.data.get('password')
+    if not email or not password:
+        return Response({'success': False, 'message': 'Email and password are required.'}, status=status.HTTP_400_BAD_REQUEST)
+    if User.objects.filter(username=email).exists():
+        return Response({'success': False, 'message': 'User with this email already exists.'}, status=status.HTTP_400_BAD_REQUEST)
+    try:
+        user = User.objects.create_user(username=email, email=email, password=password)
+        return Response({'success': True, 'message': 'User registered successfully.'}, status=status.HTTP_201_CREATED)
+    except IntegrityError:
+        return Response({'success': False, 'message': 'User with this email already exists.'}, status=status.HTTP_400_BAD_REQUEST)
+    except Exception as e:
+        return Response({'success': False, 'message': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 from rest_framework import status
 from rest_framework.decorators import api_view, parser_classes
 from rest_framework.parsers import MultiPartParser, FormParser
@@ -44,6 +111,7 @@ def extract_document(request):
         
         # Save document to database
         document = Document.objects.create(
+            user=request.user,
             title=title,
             file=file,
             document_type=document_type,
@@ -122,7 +190,7 @@ def get_documents(request):
     Get list of all uploaded documents
     """
     try:
-        documents = Document.objects.all().order_by('-uploaded_at')
+        documents = Document.objects.filter(user=request.user).order_by('-uploaded_at')
         data = []
         
         for doc in documents:
@@ -159,7 +227,7 @@ def get_document_detail(request, document_id):
     Get detailed information about a specific document
     """
     try:
-        document = Document.objects.get(id=document_id)
+        document = Document.objects.get(id=document_id, user=request.user)
         
         data = {
             'id': document.id,

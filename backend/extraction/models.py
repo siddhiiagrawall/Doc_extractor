@@ -4,6 +4,7 @@ import json
 
 
 class Document(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='documents')
     DOCUMENT_TYPES = [
         ('invoice', 'Invoice'),
         ('resume', 'Resume'),

@@ -13,19 +13,23 @@ import numpy as np
 from llama_cpp import Llama
 import os
 
-# Load Mistral GGUF model locally using llama-cpp
-MODEL_PATH = "models/mistral/mistral-7b-instruct-v0.1.Q4_K_M.gguf"
 
-if not os.path.exists(MODEL_PATH):
-    raise FileNotFoundError(f"Mistral model not found at {MODEL_PATH}")
+# Load Mistral GGUF model path from environment variable or use default
+DEFAULT_MODEL_PATH = "models/mistral/mistral-7b-instruct-v0.1.Q4_K_M.gguf"
+MODEL_PATH = os.environ.get("MISTRAL_MODEL_PATH", DEFAULT_MODEL_PATH)
 
-llm = Llama(
-    model_path=MODEL_PATH,
-    n_ctx=4096,
-    n_threads=8,     # You have 4 cores / 8 threads (i3), use max
-    n_gpu_layers=0,  # CPU inference
-    verbose=False
-)
+def get_llama_model():
+    if not hasattr(get_llama_model, "llm"):
+        if not os.path.exists(MODEL_PATH):
+            raise FileNotFoundError(f"Mistral model not found at {MODEL_PATH}")
+        get_llama_model.llm = Llama(
+            model_path=MODEL_PATH,
+            n_ctx=4096,
+            n_threads=8,     # You have 4 cores / 8 threads (i3), use max
+            n_gpu_layers=0,  # CPU inference
+            verbose=False
+        )
+    return get_llama_model.llm
 
 
 logger = logging.getLogger(__name__)
@@ -44,6 +48,53 @@ def make_json_serializable(data):
     return data
 
 class DocumentProcessor:
+    def _load_models(self):
+        try:
+            self.models['invoice'] = pipeline(
+                "token-classification",
+                model="dbmdz/bert-large-cased-finetuned-conll03-english",
+                device=0 if self.device == "cuda" else -1
+            )
+            self.models['resume'] = pipeline(
+                "token-classification",
+                model="dbmdz/bert-large-cased-finetuned-conll03-english",
+                device=0 if self.device == "cuda" else -1
+            )
+            self.models['research_paper'] = pipeline(
+                "summarization",
+                model="facebook/bart-large-cnn",
+                device=0 if self.device == "cuda" else -1
+            )
+            self.models['other'] = None  # placeholder
+            # Add QA pipeline for open-ended Q&A
+            try:
+                self.models['qa'] = pipeline(
+                    "question-answering",
+                    model="deepset/roberta-base-squad2",
+                    device=0 if self.device == "cuda" else -1
+                )
+            except Exception as e:
+                logger.error(f"Error loading QA model: {e}")
+                self.models['qa'] = None
+            logger.info("All models loaded successfully")
+        except Exception as e:
+            logger.error(f"Error loading models: {e}")
+            self._load_fallback_models()
+
+    def answer_question(self, text: str, question: str) -> Dict[str, Any]:
+        """Answer a question about the document text using a QA model."""
+        if not self.models.get('qa'):
+            return {"error": "QA model not available"}
+        try:
+            result = self.models['qa']({"context": text, "question": question})
+            return {
+                "question": question,
+                "answer": result.get("answer"),
+                "score": result.get("score")
+            }
+        except Exception as e:
+            logger.error(f"Error answering question: {e}")
+            return {"error": str(e)}
     def __init__(self):
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.models = {}
@@ -155,18 +206,22 @@ class DocumentProcessor:
 
     def process_custom(self, text: str, prompt: str) -> Dict[str, Any]:
         """Process document using Mistral-7B-Instruct locally"""
+        # Basic prompt sanitization (prevent prompt injection/abuse)
+        safe_prompt = prompt.replace("[INST]", "").replace("[/INST]", "").strip()[:500]
         try:
             chunks = [text[i:i+3000] for i in range(0, len(text), 3000)]
             full_response = ""
 
+            llm = get_llama_model()
+
             for chunk in chunks:
-                full_prompt = f"[INST] {prompt.strip()}\n\n{chunk.strip()} [/INST]"
+                full_prompt = f"[INST] {safe_prompt}\n\n{chunk.strip()} [/INST]"
                 result = llm(full_prompt, max_tokens=1024, stop=["</s>"])
                 response = result["choices"][0]["text"].strip()
                 full_response += response + "\n---\n"
 
             return {
-                "prompt_used": prompt,
+                "prompt_used": safe_prompt,
                 "model": "mistral-7b-instruct.Q4_K_M.gguf (local)",
                 "result": full_response.strip()
             }

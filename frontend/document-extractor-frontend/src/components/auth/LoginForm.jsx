@@ -15,8 +15,8 @@ const LoginForm = () => {
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  
-  const { mockLogin } = useAuth(); // Use mockLogin for now
+
+  const { login } = useAuth();
   const navigate = useNavigate();
 
   const handleChange = (e) => {
@@ -32,9 +32,7 @@ const LoginForm = () => {
     setError('');
 
     try {
-      // Using mock login for now - replace with real login when backend is ready
-      const result = mockLogin(formData.email, formData.password);
-      
+      const result = await login({ username: formData.email, password: formData.password });
       if (result.success) {
         navigate('/dashboard');
       } else {

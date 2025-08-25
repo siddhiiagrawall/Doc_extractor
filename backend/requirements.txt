@@ -1,0 +1,11 @@
+Django>=5.2
+djangorestframework
+djangorestframework-simplejwt
+django-cors-headers
+pydantic
+PyMuPDF
+Pillow
+torch
+transformers
+llama-cpp-python
+numpy

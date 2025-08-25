@@ -10,7 +10,6 @@ import { useAuth } from '../../contexts/AuthContext';
 
 const RegisterForm = () => {
   const [formData, setFormData] = useState({
-    name: '',
     email: '',
     password: '',
     confirmPassword: '',
@@ -18,7 +17,7 @@ const RegisterForm = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   
-  const { mockLogin } = useAuth(); // Use mockLogin for now
+  const { register } = useAuth();
   const navigate = useNavigate();
 
   const handleChange = (e) => {
@@ -47,9 +46,7 @@ const RegisterForm = () => {
     }
 
     try {
-      // Using mock login for now - replace with real registration when backend is ready
-      const result = mockLogin(formData.email, formData.password);
-      
+      const result = await register({ email: formData.email, password: formData.password });
       if (result.success) {
         navigate('/dashboard');
       } else {
@@ -79,22 +76,9 @@ const RegisterForm = () => {
               </Alert>
             )}
             
-            <div className="space-y-2">
-              <Label htmlFor="name">Full Name</Label>
-              <div className="relative">
-                <User className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
-                <Input
-                  id="name"
-                  name="name"
-                  type="text"
-                  placeholder="Enter your full name"
-                  value={formData.name}
-                  onChange={handleChange}
-                  className="pl-10"
-                  required
-                />
-              </div>
-            </div>
+            {/* Removed username field, using email for registration */}
+            
+            {/* Removed email field for backend compatibility */}
             
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
@@ -112,7 +96,7 @@ const RegisterForm = () => {
                 />
               </div>
             </div>
-            
+
             <div className="space-y-2">
               <Label htmlFor="password">Password</Label>
               <div className="relative">

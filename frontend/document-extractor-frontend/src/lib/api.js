@@ -62,11 +62,13 @@ export const documentAPI = {
 // Auth API (placeholder for when you implement authentication)
 export const authAPI = {
   login: (credentials) => {
-    return api.post('/auth/login/', credentials);
+    // Always send username and password for backend compatibility
+    return api.post('/token/', { username: credentials.username, password: credentials.password });
   },
 
   register: (userData) => {
-    return api.post('/auth/register/', userData);
+    // Only send email and password
+    return api.post('/register/', { email: userData.email, password: userData.password });
   },
 
   logout: () => {
